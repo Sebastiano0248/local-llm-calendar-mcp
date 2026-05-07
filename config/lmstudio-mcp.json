@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "google-calendar": {
+      "command": "node",
+      "args": ["C:\\Users\\Joan\\Documents\\LocalLLM\\mcp-google-calendar\\index.js"]
+    }
+  }
+}

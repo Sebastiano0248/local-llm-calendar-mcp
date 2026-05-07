@@ -1,0 +1,35 @@
+# OAuth credentials and tokens — never commit these
+mcp-google-calendar/credentials/credentials.json
+mcp-google-calendar/credentials/token.json
+
+# Keep the credentials directory but ignore its contents
+!mcp-google-calendar/credentials/.gitkeep
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# Local LLM model files (large binary files)
+models/
+*.gguf
+*.ggml
+*.bin
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
