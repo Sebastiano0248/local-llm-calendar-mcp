@@ -2,6 +2,19 @@
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that connects LM Studio (or any MCP-compatible local LLM runner) to your Google Calendar and Google Tasks, allowing your local AI models to read your schedule and task lists.
 
+## Screenshots
+
+**Monthly sleep statistics**
+![Monthly sleep statistics](docs/screenshots/sleep-monthly-stats.png)
+
+**Recent activity summary**
+![Recent activity summary](docs/screenshots/recent-activity-summary.png)
+
+**Time spent by category (work, leisure, gym)**
+![Time spent by category](docs/screenshots/time-spent-by-category.png)
+
+---
+
 ## What it does
 
 This server exposes read-only tools over the MCP stdio transport:
@@ -108,7 +121,27 @@ The config references the absolute path to `index.js`. Open `config/lmstudio-mcp
 
 > In LM Studio, go to **Settings → MCP Servers** and point it to this file, or paste the config directly into the MCP settings panel.
 
-### 6. Download a model (optional)
+### 6. Configure the LM Studio preset (optional)
+
+A ready-made LM Studio preset is included at `config/LocalLLM for Calendar tool MCP.preset.json`. It configures the inference parameters recommended for tool-calling accuracy with this MCP server.
+
+To use it, open LM Studio, go to **My Presets**, click **Import** and select the file.
+
+The preset sets the following inference parameters:
+
+| Parameter | Value | Reason |
+|---|---|---|
+| Temperature | `0.05` | Near-deterministic — avoids hallucinating dates or event names |
+| Top-K sampling | `20` | Keeps only the most likely tokens |
+| Top-P sampling | `0.9` | Nucleus sampling for stable output |
+| Repeat penalty | `1.05` | Light penalty to avoid repetition |
+| Max predicted tokens | `512` | Enough for calendar responses; prevents runaway output |
+| Structured output | `none` | Let the model handle MCP tool calls freely |
+| CPU threads | `7` | Tune this to your machine (number of physical cores − 1) |
+
+> **Note:** The preset does not include a system prompt. Add your own system prompt in LM Studio after importing.
+
+### 8. Download a model (optional)
 
 Place any GGUF-format model file inside the `models/` directory. Tested with:
 

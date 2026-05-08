@@ -2,7 +2,7 @@
   "mcpServers": {
     "google-calendar": {
       "command": "node",
-      "args": ["C:\\Users\\Joan\\Documents\\LocalLLM\\mcp-google-calendar\\index.js"]
+      "args": ["C:\\Users\\Joan\\Documents\\GitHub\\local-llm-calendar-mcp\\mcp-google-calendar\\index.js"]
     }
   }
 }

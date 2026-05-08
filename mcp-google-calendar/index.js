@@ -21,6 +21,20 @@ function getAuth() {
   return auth;
 }
 
+function parseDate(s) {
+  if (!s || s === "today") return new Date();
+  if (s === "tomorrow") return new Date(Date.now() + 86400000);
+  const daysAgo = s.match(/^(\d+)\s*days?\s*ago$/i);
+  if (daysAgo) return new Date(Date.now() - parseInt(daysAgo[1]) * 86400000);
+  const weeksAgo = s.match(/^(\d+)\s*weeks?\s*ago$/i);
+  if (weeksAgo) return new Date(Date.now() - parseInt(weeksAgo[1]) * 7 * 86400000);
+  const monthsAgo = s.match(/^(\d+)\s*months?\s*ago$/i);
+  if (monthsAgo) return new Date(Date.now() - parseInt(monthsAgo[1]) * 30 * 86400000);
+  const d = new Date(s);
+  if (isNaN(d)) throw new Error(`Fecha no reconocida: "${s}". Usa 'today', 'Xdaysago', 'Xweeksago' o fecha ISO (ej. 2026-04-01).`);
+  return d;
+}
+
 function formatEvent(e) {
   const start = e.start?.dateTime ?? e.start?.date ?? "Sin fecha";
   const end = e.end?.dateTime ?? e.end?.date ?? "";
@@ -87,16 +101,10 @@ server.tool(
     query: z.string().optional().describe("Texto para filtrar eventos por título o descripción"),
     maxResults: z.number().int().min(1).max(100).default(25).describe("Número máximo de eventos"),
     includePast: z.boolean().default(true).describe("Si incluir eventos pasados. Por defecto true para no perder historial."),
+    format: z.enum(["text", "json"]).default("text").describe("Formato de respuesta: 'text' legible o 'json' para cálculos (incluye start, end, summary, duration_minutes)"),
   },
-  async ({ calendarId, startDate, endDate, days, query, maxResults, includePast }) => {
+  async ({ calendarId, startDate, endDate, days, query, maxResults, includePast, format }) => {
     const auth = getAuth();
-
-    function parseDate(s) {
-      if (s === "today") return new Date();
-      if (s === "tomorrow") return new Date(Date.now() + 86400000);
-      return new Date(s);
-    }
-
     let timeMin = parseDate(startDate);
     if (!includePast && timeMin < new Date()) timeMin = new Date();
 
@@ -110,6 +118,19 @@ server.tool(
     });
     const items = res.data.items ?? [];
     if (!items.length) return { content: [{ type: "text", text: "No hay eventos en ese período." }] };
+
+    if (format === "json") {
+      const data = items.map(e => {
+        const start = e.start?.dateTime ?? e.start?.date;
+        const end = e.end?.dateTime ?? e.end?.date;
+        const duration_minutes = (start && end)
+          ? Math.round((new Date(end) - new Date(start)) / 60000)
+          : null;
+        return { id: e.id, summary: e.summary ?? null, start, end, duration_minutes, location: e.location ?? null, description: e.description ?? null };
+      });
+      return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    }
+
     return { content: [{ type: "text", text: items.map(formatEvent).join("\n\n") }] };
   }
 );
@@ -162,17 +183,19 @@ server.tool(
 
 server.tool(
   "search_events",
-  "Busca eventos por texto en uno o todos los calendarios",
+  "Busca eventos por texto en uno o todos los calendarios, incluyendo el pasado",
   {
     query: z.string().describe("Texto a buscar en títulos, descripciones y lugares"),
-    calendarId: z.string().default("primary").describe("ID del calendario, o 'all' para buscar en todos"),
-    maxResults: z.number().int().min(1).max(50).default(10).describe("Máximo de resultados por calendario"),
-    days: z.number().int().min(1).max(365).default(90).describe("Ventana de búsqueda en días desde hoy"),
+    calendarId: z.string().default("all").describe("ID del calendario, o 'all' para buscar en todos"),
+    maxResults: z.number().int().min(1).max(100).default(25).describe("Máximo de resultados por calendario"),
+    startDate: z.string().default("30daysago").describe("Inicio de búsqueda: 'today', '30daysago', o fecha ISO (ej. 2026-04-01)"),
+    days: z.number().int().min(1).max(365).default(30).describe("Días desde startDate"),
+    format: z.enum(["text", "json"]).default("text").describe("Formato: 'text' legible o 'json' con duration_minutes para cálculos"),
   },
-  async ({ query, calendarId, maxResults, days }) => {
+  async ({ query, calendarId, maxResults, startDate, days, format }) => {
     const auth = getAuth();
-    const timeMin = new Date().toISOString();
-    const timeMax = new Date(Date.now() + days * 86400000).toISOString();
+    const timeMin = parseDate(startDate).toISOString();
+    const timeMax = new Date(new Date(timeMin).getTime() + days * 86400000).toISOString();
 
     let calendarIds = [calendarId];
     if (calendarId === "all") {
@@ -190,8 +213,20 @@ server.tool(
     }
 
     if (!results.length) return { content: [{ type: "text", text: `No se encontraron eventos con "${query}".` }] };
-    const text = results.map(e => formatEvent(e)).join("\n\n");
-    return { content: [{ type: "text", text }] };
+
+    if (format === "json") {
+      const data = results.map(e => {
+        const start = e.start?.dateTime ?? e.start?.date;
+        const end = e.end?.dateTime ?? e.end?.date;
+        const duration_minutes = (start && end)
+          ? Math.round((new Date(end) - new Date(start)) / 60000)
+          : null;
+        return { id: e.id, summary: e.summary ?? null, start, end, duration_minutes, calendarId: e._calendarId };
+      });
+      return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    }
+
+    return { content: [{ type: "text", text: results.map(formatEvent).join("\n\n") }] };
   }
 );
 
@@ -334,6 +369,61 @@ server.tool(
       t.parent ? `Subtarea de: ${t.parent}` : null,
       `Actualizado: ${t.updated}`,
     ].filter(Boolean);
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+);
+
+server.tool(
+  "analyze_events",
+  "Busca eventos por nombre en todos los calendarios y devuelve estadísticas calculadas: media, total, mín, máx, número de sesiones. Ideal para analizar sueño, ejercicio u otras actividades registradas como eventos.",
+  {
+    query: z.string().describe("Texto a buscar en el título del evento (ej. 'Dormir', 'Correr')"),
+    startDate: z.string().default("30daysago").describe("Inicio: 'today', '30daysago', o fecha ISO (ej. 2026-04-01)"),
+    days: z.number().int().min(1).max(365).default(30).describe("Días desde startDate"),
+    minDuration: z.number().int().min(0).default(0).describe("Ignorar eventos más cortos que este número de minutos (útil para excluir siestas)"),
+  },
+  async ({ query, startDate, days, minDuration }) => {
+    const auth = getAuth();
+    const timeMin = parseDate(startDate).toISOString();
+    const timeMax = new Date(new Date(timeMin).getTime() + days * 86400000).toISOString();
+
+    const listRes = await calendar.calendarList.list({ auth });
+    const calendarIds = (listRes.data.items ?? []).map(c => c.id);
+
+    const durations = [];
+    for (const cid of calendarIds) {
+      const res = await calendar.events.list({
+        auth, calendarId: cid, q: query, maxResults: 500, singleEvents: true,
+        timeMin, timeMax,
+      });
+      for (const e of res.data.items ?? []) {
+        const start = e.start?.dateTime ?? e.start?.date;
+        const end = e.end?.dateTime ?? e.end?.date;
+        if (!start || !end) continue;
+        const mins = Math.round((new Date(end) - new Date(start)) / 60000);
+        if (mins >= minDuration) durations.push(mins);
+      }
+    }
+
+    if (!durations.length) return { content: [{ type: "text", text: `No se encontraron eventos con "${query}" en ese período.` }] };
+
+    const total = durations.reduce((a, b) => a + b, 0);
+    const avg = Math.round(total / durations.length);
+    const min = Math.min(...durations);
+    const max = Math.max(...durations);
+
+    const fmt = m => `${Math.floor(m / 60)}h ${m % 60}min`;
+    const lines = [
+      `Eventos analizados: ${durations.length}`,
+      `Período: ${timeMin.slice(0, 10)} → ${timeMax.slice(0, 10)}`,
+      minDuration > 0 ? `(Sesiones < ${fmt(minDuration)} excluidas)` : null,
+      ``,
+      `Media:  ${fmt(avg)} (${avg} min)`,
+      `Mínimo: ${fmt(min)} (${min} min)`,
+      `Máximo: ${fmt(max)} (${max} min)`,
+      `Total:  ${fmt(total)} (${total} min)`,
+    ].filter(l => l !== null);
+
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 );
